@@ -114,7 +114,7 @@ with tab2:
                 st.warning("Silakan masukkan prompt agar Nano Banana tahu apa yang harus diubah!")
             else:
                 # Menggunakan Gemini 1.5 Flash sebagai Engine Nano Banana
-                model_gen = genai.GenerativeModel('gemini-1.5-flash')
+                model_gen = genai.GenerativeModel('gemini-2.5-flash')
                 
                 with st.spinner("Nano Banana sedang memproses gambar dan prompt Anda..."):
                     try:
