@@ -15,8 +15,8 @@ def call_visora_ai(inputs):
     # Daftar nama model dari yang terbaru hingga stabil
     model_names = [
         'gemini-3-flash',          # Nama resmi Nano Banana 2
-        'gemini-1.5-flash-latest', # Fallback 1
-        'gemini-1.5-flash'         # Fallback 2
+        'gemini-2.5-flash-latest', # Fallback 1
+        'gemini-2.5-flash'         # Fallback 2
     ]
     
     last_error = ""
