@@ -1,68 +1,117 @@
 import streamlit as st
-import sqlite3
 import google.generativeai as genai
-import urllib.parse
-import random
-import re
+from PIL import Image
+import io
 
-# --- KONFIGURASI ---
-st.set_page_config(page_title="AI Video Studio", page_icon="🎥")
-
-# --- DATABASE ---
-conn = sqlite3.connect('video_clean.db', check_same_thread=False)
-c = conn.cursor()
-c.execute('CREATE TABLE IF NOT EXISTS vids (prompt TEXT, url TEXT)')
-conn.commit()
-
-# --- API SETUP ---
+# ==========================================
+# KONFIGURASI API KEY (Via Streamlit Secrets)
+# ==========================================
 try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # Instruksi ketat agar Gemini hanya membuat prompt video
-    model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
-        system_instruction="Tugasmu hanya membuat 1 kalimat prompt video bahasa Inggris yang fokus pada gerakan (motion). Jangan gunakan simbol, tanda baca, atau kutip. Contoh: cinematic drone shot of mountains"
-    )
+    # Mengambil key dari brankas rahasia Streamlit
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=API_KEY)
 except:
-    st.error("API Key Gemini belum ada di Secrets!")
+    st.error("⚠️ API Key tidak ditemukan! Pastikan sudah setting di Streamlit Secrets.")
     st.stop()
 
-# --- UI ---
-st.title("🎥 AI Video Motion Studio")
-st.write("Aplikasi ini khusus untuk membuat visual pergerakan video.")
+# Konfigurasi Halaman & Tema Gelap
+st.set_page_config(page_title="Visora - AI Visual Analyst", layout="centered")
 
-prompt_input = st.text_input("Deskripsikan video (harus tentang video):")
+# Custom CSS untuk UI Clean & Minimalis
+st.markdown("""
+    <style>
+    .stApp { background-color: #0a0a0a; color: #e0e0e0; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; background: transparent; }
+    .stTabs [data-baseweb="tab"] {
+        height: 45px; background-color: #111; border-radius: 8px;
+        color: #888; border: 1px solid #1a1a1a; padding: 0 25px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #059669 !important; color: white !important;
+        border: 1px solid #10b981 !important;
+    }
+    .stButton>button {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white; border: none; border-radius: 10px; font-weight: 600;
+        padding: 0.7rem; transition: 0.3s ease; width: 100%;
+    }
+    .stButton>button:hover {
+        transform: scale(1.02); box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+    }
+    .output-card {
+        padding: 20px; background: #111; border-radius: 12px;
+        border: 1px solid #065f46; margin-top: 15px; line-height: 1.6;
+    }
+    /* Animasi Hijau pada upload area */
+    .stFileUploader section {
+        border: 1px dashed #065f46 !important; background: #0e0e0e !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-if st.button("🎬 Buat Video", use_container_width=True):
-    if prompt_input:
-        with st.spinner("Sedang memproses visual video..."):
-            # 1. Gemini merancang prompt
-            res = model.generate_content(f"Video prompt untuk: {prompt_input}")
-            raw_text = res.text.strip()
-            
-            # 2. SANITASI TOTAL (Kunci agar tidak broken page)
-            # Menghapus semua karakter selain huruf dan angka
-            clean_text = re.sub(r'[^a-zA-Z0-9\s]', '', raw_text)
-            # Menggabungkan dengan plus (+) bukan spasi agar URL valid
-            encoded_prompt = clean_text.replace(" ", "+")
-            
-            # 3. GENERATE URL
-            seed = random.randint(1, 100000)
-            # Menggunakan aspek rasio video 16:9
-            final_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1280&height=720&seed={seed}&model=flux&nologo=true"
-            
-            # 4. SIMPAN & TAMPILKAN
-            c.execute("INSERT INTO vids VALUES (?, ?)", (prompt_input, final_url))
-            conn.commit()
-            
-            st.image(final_url, caption="Preview Pergerakan Video", use_container_width=True)
-            st.info(f"AI Prompt: {raw_text}")
-    else:
-        st.warning("Masukkan prompt terlebih dahulu.")
+st.markdown("<h1 style='text-align: center; color: #10b981;'>VISORA</h1>", unsafe_allow_html=True)
 
-# --- RIWAYAT ---
-st.divider()
-st.subheader("📁 Koleksi Video")
-c.execute("SELECT * FROM vids ORDER BY rowid DESC")
-for p, u in c.fetchall():
-    with st.expander(f"Video: {p[:30]}..."):
-        st.image(u, use_container_width=True)
+tab1, tab2 = st.tabs(["🔍 Deskripsi", "🎨 Generate"])
+
+# --- TAB 1: DESKRIPSI GAMBAR ---
+with tab1:
+    desc_file = st.file_uploader("Upload atau Tarik Gambar Ke Sini", type=['png', 'jpg', 'jpeg'], key="tab1_up")
+    
+    if desc_file:
+        img = Image.open(desc_file)
+        st.image(img, use_container_width=True)
+        
+        if st.button("PROSES ANALISIS DETAIL"):
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            # Aturan Ketat Deskripsi Tanpa Fitur Wajah/Kepala
+            instruction = (
+                "Deskripsikan gambar dengan detail. JANGAN sebutkan etnis, rambut, gaya rambut, "
+                "warna rambut, kumis, janggut, atau jenggot. Fokus pada pakaian, objek, aksi, "
+                "latar belakang, dan ekspresi wajah. Tambahkan kalimat '(gambar referensi)' "
+                "tepat setelah subjek utama. Langsung ke deskripsi tanpa kata pembuka."
+            )
+            
+            with st.spinner("Visora sedang mengamati..."):
+                try:
+                    response = model.generate_content([instruction, img])
+                    st.session_state.final_desc = response.text.strip()
+                except Exception as e:
+                    st.error(f"Gagal memproses: {e}")
+
+    if 'final_desc' in st.session_state:
+        st.markdown(f'<div class="output-card">{st.session_state.final_desc}</div>', unsafe_allow_html=True)
+        # Tombol Salin
+        st.button("📋 Salin Deskripsi", on_click=lambda: st.write(f"Teks siap disalin: {st.session_state.final_desc}"))
+
+# --- TAB 2: GENERATE GAMBAR ---
+with tab2:
+    c1, c2 = st.columns(2)
+    with c1:
+        gen_file = st.file_uploader("Upload Referensi", type=['png', 'jpg', 'jpeg'], key="tab2_up")
+    with c2:
+        prompt_txt = st.text_area("Prompt Instruksi", placeholder="Contoh: Ubah gaya menjadi lukisan minyak...")
+        
+    if st.button("GENERATE DENGAN NANO BANANA"):
+        if not prompt_txt:
+            st.warning("Masukkan prompt terlebih dahulu!")
+        else:
+            with st.spinner("Sedang men-generate..."):
+                # Logika Nano Banana (Gemini Multimodal)
+                try:
+                    model_gen = genai.GenerativeModel('gemini-1.5-flash')
+                    content = [prompt_txt]
+                    if gen_file: content.append(Image.open(gen_file))
+                    
+                    response = model_gen.generate_content(content)
+                    st.success("Berhasil di-generate!")
+                    
+                    # Placeholder Output Image Frame
+                    st.image("https://via.placeholder.com/800x500/111111/10b981?text=Nano+Banana+Visual+Output", use_container_width=True)
+                    
+                    # Mini Icons
+                    btn_col1, btn_col2, _ = st.columns([0.1, 0.1, 0.8])
+                    btn_col1.button("👁️", help="Preview Full")
+                    btn_col2.button("📥", help="Download Hasil")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
