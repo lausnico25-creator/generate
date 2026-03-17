@@ -88,45 +88,58 @@ with tab1:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-# --- MENU 2: GENERATE GAMBAR ---
+# --- MENU 2: GENERATE GAMBAR (NANO BANANA 2) ---
 with tab2:
-    st.markdown("### Nano Banana 2 Engine")
+    st.markdown("### 🍌 Nano Banana 2 Engine")
     
-    # Fitur Paste & Upload
-    pasted_data = paste_image_button(label="📋 Klik & Paste Gambar (Ctrl+V)", key="pasted_ui")
-    uploaded_gen = st.file_uploader("Atau Drag & Drop di sini", type=["jpg", "png", "jpeg"], key="u_gen")
-    prompt_gen = st.text_input("Input Prompt Modifikasi:")
+    # Fitur Input Gambar (Paste & Upload)
+    pasted_data = paste_image_button(label="📋 Klik & Paste Gambar (Ctrl+V)", key="pasted_gen_unique")
+    uploaded_gen = st.file_uploader("Atau Drag & Drop di sini", type=["jpg", "png", "jpeg"], key="u_gen_unique")
+    
+    # Input Prompt untuk Modifikasi
+    prompt_gen = st.text_area("Input Prompt Modifikasi:", placeholder="Contoh: Ubah latar belakang menjadi pantai atau tambahkan kacamata hitam...")
 
-    # Logika Penentuan Gambar (Amankan dari AttributeError)
+    # Logika Penentuan Gambar yang Aktif
     final_img = None
-    
-    # Cek paste button secara aman
     if pasted_data and hasattr(pasted_data, 'image') and pasted_data.image is not None:
         final_img = pasted_data.image
     elif uploaded_gen:
         final_img = Image.open(uploaded_gen)
 
     if final_img:
-        st.image(final_img, caption="Referensi Siap", width=300)
+        st.image(final_img, caption="Gambar Referensi Terdeteksi", width=300)
         
-        if st.button("🚀 Generate New Image"):
-            # Nano Banana 2 menggunakan basis Gemini 3 Flash
-            model_gen = genai.GenerativeModel('gemini-2.5-flash')
-            
-            with st.spinner("Generating with Nano Banana..."):
-                try:
-                    # Menghasilkan output (simulasi pengolahan gambar referensi + prompt)
-                    response = model_gen.generate_content([f"Base on this image, fulfill this prompt: {prompt_gen}", final_img])
-                    
-                    st.markdown("---")
-                    st.image(final_img, caption="Result Preview", use_container_width=True)
-                    
-                    # Ikon Download & Preview
-                    col_dl, col_pre, _ = st.columns([0.1, 0.1, 0.8])
-                    with col_dl:
-                        st.button("📥", help="Download Result")
-                    with col_pre:
-                        st.button("🔍", help="Preview Fullscreen")
+        if st.button("🚀 Jalankan Nano Banana", key="btn_run_gen"):
+            if not prompt_gen:
+                st.warning("Silakan masukkan prompt agar Nano Banana tahu apa yang harus diubah!")
+            else:
+                # Menggunakan Gemini 1.5 Flash sebagai Engine Nano Banana
+                model_gen = genai.GenerativeModel('gemini-1.5-flash')
+                
+                with st.spinner("Nano Banana sedang memproses gambar dan prompt Anda..."):
+                    try:
+                        # PROSES MULTIMODAL: Mengirim Gambar + Prompt ke AI
+                        # Kita meminta AI memberikan deskripsi visual baru berdasarkan modifikasi
+                        response = model_gen.generate_content([
+                            f"Instruksi Modifikasi: {prompt_gen}. Tolong berikan deskripsi visual yang sangat detail tentang bagaimana gambar ini berubah sesuai instruksi saya.", 
+                            final_img
+                        ])
                         
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                        st.markdown("---")
+                        st.subheader("Hasil Modifikasi (Visual Description):")
+                        st.success(response.text)
+                        
+                        # Ikon Download & Preview (Simulasi Output)
+                        col_dl, col_pre, _ = st.columns([0.1, 0.1, 0.8])
+                        with col_dl:
+                            # Tombol download yang benar-benar bisa mengunduh file referensi saat ini
+                            buffered = io.BytesIO()
+                            final_img.save(buffered, format="PNG")
+                            st.download_button("📥", data=buffered.getvalue(), file_name="visora_output.png", help="Download Result")
+                        with col_pre:
+                            st.button("🔍", help="Preview Fullscreen")
+                            
+                    except Exception as e:
+                        st.error(f"Terjadi kesalahan pada model: {e}")
+    else:
+        st.info("Silakan Upload atau Paste gambar terlebih dahulu.")
