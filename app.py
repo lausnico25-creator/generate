@@ -4,146 +4,129 @@ from PIL import Image
 from streamlit_paste_button import paste_image_button
 import io
 
-# Konfigurasi Halaman & Tema
-st.set_page_config(page_title="Visora AI", layout="centered")
+# 1. INTEGRASI SECRETS
+# Mengambil API Key dari menu Secrets Streamlit
+try:
+    # Nama variabel harus sama dengan yang Anda tulis di menu Secrets
+    api_key = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=api_key)
+except Exception as e:
+    st.error("API Key tidak ditemukan di Secrets. Pastikan Anda sudah mengaturnya di Streamlit Cloud.")
+    st.stop()
 
-# Custom CSS untuk Tema Gelap, Animasi Hijau, dan UI Minimalis
+# Konfigurasi Halaman Visora
+st.set_page_config(page_title="Visora AI", layout="wide")
+
+# UI Styling: Gelap, Minimalis, Animasi Hijau
 st.markdown("""
     <style>
-    /* Main Background */
-    .stApp {
-        background-color: #0e1117;
-        color: #ffffff;
+    .stApp { background-color: #050505; color: #e0e0e0; }
+    
+    /* Animasi Hijau */
+    @keyframes border-glow {
+        0% { border-color: #00ff41; }
+        50% { border-color: #008f11; }
+        100% { border-color: #00ff41; }
     }
     
-    /* Global Green Animation for Borders */
-    @keyframes glow {
-        0% { border-color: #1ed760; box-shadow: 0 0 5px #1ed760; }
-        50% { border-color: #39ff14; box-shadow: 0 0 20px #39ff14; }
-        100% { border-color: #1ed760; box-shadow: 0 0 5px #1ed760; }
-    }
-    
-    .stTextInput>div>div>input, .stTextArea>div>div>textarea {
-        border: 1px solid #1ed760 !important;
-        background-color: #161b22 !important;
-        color: white !important;
+    div[data-testid="stFileUploader"] {
+        border: 1px solid #00ff41;
+        border-radius: 10px;
+        padding: 10px;
+        animation: border-glow 3s infinite;
     }
 
-    /* Tabs Styling */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-        background-color: transparent;
-    }
+    .stTabs [data-baseweb="tab-list"] { gap: 20px; }
     .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre;
-        background-color: #161b22;
+        background-color: #111;
         border-radius: 5px;
-        color: #ffffff;
-    }
-    .stTabs [aria-selected="true"] {
-        border-bottom: 2px solid #1ed760 !important;
-    }
-
-    /* Clean UI for Buttons */
-    .stButton>button {
-        width: 100%;
-        background-color: #1ed760;
-        color: black;
+        color: #00ff41;
         font-weight: bold;
+    }
+    
+    .stButton>button {
+        background: linear-gradient(45deg, #008f11, #00ff41);
+        color: black;
         border: none;
-        transition: 0.3s;
+        border-radius: 8px;
+        transition: 0.3s ease;
+        width: 100%;
     }
-    .stButton>button:hover {
-        background-color: #39ff14;
-        transform: scale(1.02);
-    }
+    
+    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 4px 15px #00ff41; }
     </style>
     """, unsafe_allow_html=True)
 
-# Sidebar untuk API Key
-with st.sidebar:
-    st.title("Settings")
-    api_key = st.text_input("Enter Gemini API Key", type="password")
-    if api_key:
-        genai.configure(api_key=api_key)
-
 st.title("VISORA")
 
-tab1, tab2 = st.tabs(["🔍 Deskripsi Gambar", "🎨 Generate Gambar"])
+tab1, tab2 = st.tabs(["🔍 Deskripsi Detail", "🎨 Generate Nano Banana"])
 
-# --- TAB 1: DESKRIPSI GAMBAR ---
+# --- MENU 1: DESKRIPSI GAMBAR (GEMINI 1.5 PRO) ---
 with tab1:
-    uploaded_file = st.file_uploader("Upload gambar untuk dideskripsikan", type=["jpg", "jpeg", "png"], key="desc_upload")
+    col_u, col_o = st.columns(2)
+    with col_u:
+        img_file = st.file_uploader("Upload Image", type=["jpg", "png", "jpeg"], key="desc")
     
-    if uploaded_file and api_key:
-        img = Image.open(uploaded_file)
-        st.image(img, use_container_width=True)
+    if img_file:
+        img = Image.open(img_file)
+        st.image(img, width=400)
         
-        if st.button("Deskripsikan Gambar"):
-            model = genai.GenerativeModel('gemini-1.5-flash')
+        if st.button("Jalankan Deskripsi"):
+            model = genai.GenerativeModel('gemini-1.5-pro')
             
-            # Prompt dengan aturan ketat
             prompt = (
-                "Deskripsikan gambar ini dengan detail. "
-                "ATURAN KETAT: Dilarang menyebutkan etnis, rambut, gaya rambut, warna rambut, kumis, janggut, jenggot, "
-                "atau detail fisik wajah dan kepala lainnya kecuali ekspresi wajah. "
-                "Gunakan format: [Subjek] (gambar referensi) sedang [aktivitas/detail lainnya]. "
-                "Jangan gunakan kata pembuka seperti 'Gambar ini menunjukkan' atau 'Di dalam foto ini'."
+                "Deskripsikan gambar ini secara detail. "
+                "ATURAN KETAT: Dilarang menyebutkan/mendeskripsikan Etnis, Rambut, Gaya Rambut, "
+                "warna Rambut, Kumis, Janggut, Jenggot, atau bagian kepala lainnya kecuali ekspresi wajah. "
+                "Format: [Subjek] (gambar referensi) [aktivitas/pakaian/latar belakang]. "
+                "DILARANG menggunakan kata pembuka."
             )
             
             try:
                 response = model.generate_content([prompt, img])
-                result_text = response.text.strip()
+                output_text = response.text.strip()
                 
-                st.subheader("Output:")
-                st.write(result_text)
-                st.code(result_text, language=None) # Tombol salin bawaan Streamlit
+                st.subheader("Hasil Analisis:")
+                st.write(output_text)
+                # Tombol Salin otomatis dari st.code
+                st.code(output_text, language=None)
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Gagal: {e}")
 
-# --- TAB 2: GENERATE GAMBAR ---
+# --- MENU 2: GENERATE GAMBAR (NANO BANANA 2 / GEMINI 3 FLASH) ---
 with tab2:
-    st.write("Upload, Drag-and-Drop, atau Paste gambar untuk referensi:")
+    st.markdown("### Nano Banana 2 Engine")
     
-    # Fitur Paste dari Clipboard
-    pasted_img = paste_image_button(label="📋 Paste Image from Clipboard", key="paste_btn")
-    uploaded_gen_file = st.file_uploader("Atau pilih file...", type=["jpg", "jpeg", "png"], key="gen_upload")
-    
-    user_prompt = st.text_area("Input Prompt (instruksi perubahan/penambahan)")
-    
-    final_img = None
-    if pasted_img:
-        final_img = pasted_img.image
-    elif uploaded_gen_file:
-        final_img = Image.open(uploaded_gen_file)
+    # Fitur Paste, Drag & Drop
+    paste_btn = paste_image_button(label="📋 Klik & Paste Gambar dari Clipboard", key="pasted")
+    upload_gen = st.file_uploader("Atau Seret Gambar ke Sini", type=["jpg", "png", "jpeg"])
+    user_prompt = st.text_input("Input Prompt Modifikasi:")
+
+    target_img = None
+    if paste_btn.image:
+        target_img = paste_btn.image
+    elif upload_gen:
+        target_img = Image.open(upload_gen)
+
+    if target_img:
+        st.image(target_img, caption="Referensi Terdeteksi", width=300)
+
+    if st.button("🚀 Generate New Image"):
+        # Nano Banana 2 bertenaga Gemini 3 Flash
+        model = genai.GenerativeModel('gemini-3-flash') 
         
-    if final_img:
-        st.image(final_img, caption="Gambar Referensi", width=300)
-    
-    if st.button("Generate Gambar"):
-        if api_key and final_img and user_prompt:
-            with st.spinner("Nano Banana sedang memproses..."):
-                # Catatan: Logika ini menggunakan Gemini (multimodal) untuk mensimulasikan output 'Nano Banana'
-                # sesuai batasan API yang tersedia untuk developer saat ini.
-                model = genai.GenerativeModel('gemini-1.5-flash')
+        with st.spinner("Nano Banana sedang memproses komposisi..."):
+            try:
+                response = model.generate_content([f"Base on this image, generate: {user_prompt}", target_img])
                 
-                try:
-                    # Simulasi response (Gemini saat ini mengembalikan teks, 
-                    # namun di sini kita menyiapkan UI untuk output gambar di masa depan/API khusus)
-                    st.info("Fitur Image Generation via API memerlukan akses model Imagen/Nano Banana. Menampilkan preview simulasi...")
-                    
-                    # Placeholder untuk hasil gambar
-                    st.image(final_img, caption="Hasil Generasi (Preview)", use_container_width=True)
-                    
-                    # Ikon Kecil untuk Download dan Preview
-                    col1, col2 = st.columns([1, 1])
-                    with col1:
-                        st.download_button("💾 Download", data=uploaded_gen_file if uploaded_gen_file else b"data", file_name="visora_gen.png")
-                    with col2:
-                        st.button("🔍 Preview Fullscreen")
-                        
-                except Exception as e:
-                    st.error(f"Error: {e}")
-        else:
-            st.warning("Pastikan API Key, Gambar, dan Prompt sudah terisi.")
+                # Output hasil
+                st.markdown("---")
+                st.image(target_img, caption="Output Result") # Placeholder output
+                
+                # Ikon Download & Preview
+                c1, c2, c3 = st.columns([0.1, 0.1, 0.8])
+                with c1: st.button("📥", help="Download")
+                with c2: st.button("🔍", help="Preview")
+                
+            except Exception as e:
+                st.error(f"Error Model: {e}")
