@@ -24,7 +24,7 @@ try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     # Batasan Sistem: Memaksa Gemini hanya fokus pada Video
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="gemini-2.5-flash",
         system_instruction="Kamu adalah ahli sinematografi. Tugasmu HANYA mengubah prompt user menjadi deskripsi visual gerakan video (motion video) dalam bahasa Inggris. Jika user meminta sesuatu yang tidak berhubungan dengan video, tolak dengan sopan."
     )
 except:
