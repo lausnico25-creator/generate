@@ -93,17 +93,19 @@ with tab1:
             except Exception as e:
                 st.error(f"Gagal: {e}")
 
-# --- MENU 2: GENERATE GAMBAR (NANO BANANA 2 / GEMINI 3 FLASH) ---
+# --- MENU 2: GENERATE GAMBAR (NANO BANANA 2) ---
 with tab2:
     st.markdown("### Nano Banana 2 Engine")
     
-    # Fitur Paste, Drag & Drop
+    # Fitur Paste
     paste_btn = paste_image_button(label="📋 Klik & Paste Gambar dari Clipboard", key="pasted")
     upload_gen = st.file_uploader("Atau Seret Gambar ke Sini", type=["jpg", "png", "jpeg"])
     user_prompt = st.text_input("Input Prompt Modifikasi:")
 
     target_img = None
-    if paste_btn.image:
+
+    # Perbaikan: Tambahkan pengecekan 'if paste_btn:' sebelum mengakses '.image'
+    if paste_btn is not None and paste_btn.image is not None:
         target_img = paste_btn.image
     elif upload_gen:
         target_img = Image.open(upload_gen)
