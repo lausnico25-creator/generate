@@ -67,7 +67,7 @@ with tab1:
         
         if st.button("Jalankan Deskripsi", key="btn_desc"):
             # Menggunakan Gemini 1.5 Pro untuk akurasi sensor tinggi
-            model_desc = genai.GenerativeModel('gemini-2.5-pro')
+            model_desc = genai.GenerativeModel('gemini-2.5-flash')
             
             prompt_desc = (
                 "Deskripsikan gambar ini secara sangat detail. "
@@ -111,7 +111,7 @@ with tab2:
         
         if st.button("🚀 Generate New Image"):
             # Nano Banana 2 menggunakan basis Gemini 3 Flash
-            model_gen = genai.GenerativeModel('gemini-1.5-flash')
+            model_gen = genai.GenerativeModel('gemini-2.5-flash')
             
             with st.spinner("Generating with Nano Banana..."):
                 try:
