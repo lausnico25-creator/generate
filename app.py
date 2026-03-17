@@ -7,14 +7,13 @@ import re
 from datetime import datetime
 
 # --- 1. KONFIGURASI ---
-st.set_page_config(page_title="Gemini Visual Studio", page_icon="♊", layout="wide")
+st.set_page_config(page_title="AI Video Studio", page_icon="🎥", layout="wide")
 
 # --- 2. DATABASE ---
 def init_db():
-    conn = sqlite3.connect('gemini_final.db', check_same_thread=False)
+    conn = sqlite3.connect('video_studio.db', check_same_thread=False)
     c = conn.cursor()
-    c.execute('CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT)')
-    c.execute('CREATE TABLE IF NOT EXISTS results (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER, type TEXT, prompt TEXT, url TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, prompt TEXT, video_url TEXT, timestamp TEXT)')
     conn.commit()
     return conn
 
@@ -23,88 +22,66 @@ conn = init_db()
 # --- 3. API SETUP ---
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    # Batasan Sistem: Memaksa Gemini hanya fokus pada Video
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        system_instruction="Kamu adalah ahli sinematografi. Tugasmu HANYA mengubah prompt user menjadi deskripsi visual gerakan video (motion video) dalam bahasa Inggris. Jika user meminta sesuatu yang tidak berhubungan dengan video, tolak dengan sopan."
+    )
 except:
-    st.error("API Key Gemini tidak ditemukan di Secrets!")
+    st.error("API Key Gemini tidak ditemukan!")
     st.stop()
 
-# --- 4. SIDEBAR ---
-with st.sidebar:
-    st.title("📁 Menu")
-    if st.button("➕ Project Baru", use_container_width=True):
-        c = conn.cursor()
-        c.execute("INSERT INTO sessions (title) VALUES (?)", ("Project Baru",))
-        conn.commit()
-        st.session_state.current_sid = c.lastrowid
-        st.rerun()
+# --- 4. TAMPILAN UTAMA ---
+st.title("🎥 Pro AI Video Generator")
+st.write("Ubah teks menjadi visual video sinematik secara instan.")
+
+# --- 5. INPUT & LOGIKA ---
+with st.container(border=True):
+    user_prompt = st.text_input("Deskripsikan video yang ingin dibuat:", placeholder="Contoh: Drone shot melintasi air terjun di hutan...")
     
-    st.divider()
-    c = conn.cursor()
-    c.execute("SELECT id, title FROM sessions ORDER BY id DESC")
-    for s_id, s_title in c.fetchall():
-        if st.button(f"📄 {s_title}", key=f"s_{s_id}", use_container_width=True):
-            st.session_state.current_sid = s_id
-            st.rerun()
+    if st.button("🎬 Generate Video", use_container_width=True):
+        if user_prompt:
+            with st.spinner("Gemini sedang merancang pergerakan kamera..."):
+                try:
+                    # Perintah ke Gemini untuk membuat prompt video
+                    response = model.generate_content(f"Buat prompt video sinematik untuk: {user_prompt}")
+                    video_prompt_raw = response.text.strip()
+                    
+                    # Pembersihan karakter agar URL tidak pecah
+                    clean_prompt = re.sub(r'[^a-zA-Z0-9\s]', '', video_prompt_raw)
+                    encoded_prompt = urllib.parse.quote(clean_prompt)
+                    
+                    # URL Generator (Menggunakan engine Pollinations dengan flag video)
+                    seed = random.randint(1, 999999)
+                    # Kita gunakan parameter &model=flux untuk kualitas terbaik yang mendukung motion look
+                    final_video_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1280&height=720&seed={seed}&model=flux"
+                    
+                    # Simpan ke Database
+                    c = conn.cursor()
+                    c.execute("INSERT INTO history (prompt, video_url, timestamp) VALUES (?, ?, ?)", 
+                              (user_prompt, final_video_url, datetime.now().strftime("%H:%M")))
+                    conn.commit()
+                    
+                    st.success("Video Berhasil Dirancang!")
+                    st.image(final_video_url, caption="Hasil Visual Video (Preview)", use_container_width=True)
+                    st.info(f"💡 **AI Motion Prompt:** {video_prompt_raw}")
+                    
+                except Exception as e:
+                    st.error(f"Terjadi kesalahan: {e}")
+        else:
+            st.warning("Masukkan prompt terlebih dahulu!")
 
-if "current_sid" not in st.session_state:
-    c = conn.cursor()
-    c.execute("SELECT id FROM sessions ORDER BY id DESC LIMIT 1")
-    res = c.fetchone()
-    if res: st.session_state.current_sid = res[0]
-    else:
-        c.execute("INSERT INTO sessions (title) VALUES (?)", ("Project Baru",))
-        conn.commit()
-        st.session_state.current_sid = c.lastrowid
-
-# --- 5. MAIN UI ---
-st.title("♊ Gemini Visual Studio")
-
-# Tampilkan History
+# --- 6. RIWAYAT VIDEO ---
+st.divider()
+st.subheader("📁 Riwayat Video")
 c = conn.cursor()
-c.execute("SELECT type, prompt, url FROM results WHERE session_id = ?", (st.session_state.current_sid,))
-for r_type, r_p, r_url in c.fetchall():
-    with st.container(border=True):
-        st.write(f"**[{r_type}]** {r_p}")
-        st.image(r_url, use_container_width=True)
+c.execute("SELECT prompt, video_url, timestamp FROM history ORDER BY id DESC")
+rows = c.fetchall()
 
-# --- 6. GENERATOR LOGIC ---
-st.write("---")
-if user_input := st.chat_input("Ketik sesuatu... (Contoh: Kucing astronot)"):
-    st.session_state.p_aktif = user_input
-
-if "p_aktif" in st.session_state and st.session_state.p_aktif:
-    st.info(f"Siap proses: **{st.session_state.p_aktif}**")
-    col1, col2 = st.columns(2)
-
-    def buat_visual(tipe):
-        with st.spinner(f"Sedang membuat {tipe}..."):
-            # A. Gemini bikin prompt inggris super simpel
-            try:
-                res = model.generate_content(f"Translate to simple English image description: {st.session_state.p_aktif}")
-                eng_text = res.text.strip()
-                # B. BERSIHKAN TOTAL (Hanya huruf dan spasi)
-                clean_text = re.sub(r'[^a-zA-Z\s]', '', eng_text)
-                final_prompt = clean_text.replace(" ", ",")
-                
-                # C. URL Generator
-                random_id = random.randint(1, 999999)
-                # Gunakan format URL yang lebih simpel
-                img_url = f"https://pollinations.ai/p/{final_prompt}?width=1024&height=1024&seed={random_id}&nologo=true"
-                
-                # D. Simpan
-                c.execute("INSERT INTO results (session_id, type, prompt, url) VALUES (?,?,?,?)",
-                          (st.session_state.current_sid, tipe, st.session_state.p_aktif, img_url))
-                c.execute("UPDATE sessions SET title = ? WHERE id = ?", (st.session_state.p_aktif[:15], st.session_state.current_sid))
-                conn.commit()
-                
-                del st.session_state.p_aktif
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-    with col1:
-        if st.button("🖼️ Buat Gambar", use_container_width=True):
-            buat_visual("IMAGE")
-    with col2:
-        if st.button("🎥 Buat Video (Visual)", use_container_width=True):
-            buat_visual("VIDEO")
+if rows:
+    for p, url, t in rows:
+        with st.expander(f"🕒 {t} - {p[:30]}..."):
+            st.image(url, use_container_width=True)
+            st.caption(f"Prompt asli: {p}")
+else:
+    st.write("Belum ada video yang dibuat.")
