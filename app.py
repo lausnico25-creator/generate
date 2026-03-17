@@ -73,49 +73,65 @@ if "current_sid" not in st.session_state or st.session_state.current_sid is None
         conn.commit()
         st.session_state.current_sid = c.lastrowid
 
-# --- 7. TAMPILAN UTAMA & INPUT ---
+# --- 7. TAMPILAN UTAMA ---
 st.title("🚀 Gemini-Powered Studio")
 
-# Tampilkan history chat/hasil
+# Tampilkan history dari database
 c = conn.cursor()
 c.execute("SELECT type, prompt, expanded_prompt, output_url FROM results WHERE session_id = ?", (st.session_state.current_sid,))
-for r_type, r_p, r_exp, r_url in c.fetchall():
-    with st.chat_message("assistant" if r_type == "image" else "user"):
-        st.write(f"**Original Prompt:** {r_p}")
-        st.info(f"**AI Optimized Prompt:** {r_exp}")
-        if r_type == "image": st.image(r_url, width=400)
-        else: st.video(r_url)
+results = c.fetchall()
 
-# Input Area
-if user_input := st.chat_input("Deskripsikan gambar atau video yang ingin dibuat..."):
+for r_type, r_p, r_exp, r_url in results:
+    with st.chat_message("assistant" if r_type == "image" else "user"):
+        st.write(f"**Prompt Asli:** {r_p}")
+        with st.expander("Lihat Prompt yang Dioptimasi Gemini"):
+            st.caption(r_exp)
+        if r_type == "image": 
+            st.image(r_url, caption="Hasil Gambar", use_container_width=True)
+        else: 
+            st.video(r_url)
+
+# --- 8. INPUT AREA (PERBAIKAN LOGIKA) ---
+st.write("---")
+# Menggunakan chat_input sebagai pemicu utama
+if user_input := st.chat_input("Deskripsikan ide visualmu di sini..."):
+    # Simpan input ke session state agar tidak hilang saat tombol ditekan
+    st.session_state.temp_prompt = user_input
+
+# Jika ada prompt yang baru saja dimasukkan, tampilkan pilihan tombol
+if "temp_prompt" in st.session_state and st.session_state.temp_prompt:
+    st.info(f"Prompt aktif: **{st.session_state.temp_prompt}**")
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("🎨 Generate Image", use_container_width=True):
-            with st.spinner("Gemini sedang mengoptimasi prompt gambar..."):
-                optimized = expand_prompt(user_input, "Image")
-                # Simulasi panggil API Gambar (DALL-E/Midjourney)
-                time.sleep(2)
+        if st.button("🖼️ Buat Gambar Sekarang", use_container_width=True):
+            with st.spinner("Gemini sedang mempercantik prompt gambar..."):
+                optimized = expand_prompt(st.session_state.temp_prompt, "Image")
+                # Simulasi API (Ganti dengan API Key asli jika sudah ada)
                 img_url = "https://picsum.photos/600/400" 
                 
-                # Simpan ke DB
                 c.execute("INSERT INTO results (session_id, type, prompt, expanded_prompt, output_url, timestamp) VALUES (?,?,?,?,?,?)",
-                          (st.session_state.current_sid, "image", user_input, optimized, img_url, datetime.now().strftime("%H:%M")))
-                # Update Judul Sesi
-                c.execute("UPDATE sessions SET title = ? WHERE id = ? AND title = 'Project Baru'", (user_input[:15], st.session_state.current_sid))
+                          (st.session_state.current_sid, "image", st.session_state.temp_prompt, optimized, img_url, datetime.now().strftime("%H:%M")))
+                
+                # Update Judul Sesi jika masih default
+                c.execute("UPDATE sessions SET title = ? WHERE id = ? AND title = 'Project Baru'", (st.session_state.temp_prompt[:15], st.session_state.current_sid))
                 conn.commit()
+                
+                # Bersihkan prompt sementara dan refresh
+                st.session_state.temp_prompt = None
                 st.rerun()
 
     with col2:
-        if st.button("🎬 Generate Video", use_container_width=True):
-            with st.spinner("Gemini sedang merancang skrip video..."):
-                optimized = expand_prompt(user_input, "Video")
-                # Simulasi panggil API Video (Replicate/Luma)
-                time.sleep(3)
+        if st.button("🎬 Buat Video Sekarang", use_container_width=True):
+            with st.spinner("Gemini sedang merancang konsep video..."):
+                optimized = expand_prompt(st.session_state.temp_prompt, "Video")
                 vid_url = "https://www.w3schools.com/html/mov_bbb.mp4"
                 
                 c.execute("INSERT INTO results (session_id, type, prompt, expanded_prompt, output_url, timestamp) VALUES (?,?,?,?,?,?)",
-                          (st.session_state.current_sid, "video", user_input, optimized, vid_url, datetime.now().strftime("%H:%M")))
-                c.execute("UPDATE sessions SET title = ? WHERE id = ? AND title = 'Project Baru'", (user_input[:15], st.session_state.current_sid))
+                          (st.session_state.current_sid, "video", st.session_state.temp_prompt, optimized, vid_url, datetime.now().strftime("%H:%M")))
+                
+                c.execute("UPDATE sessions SET title = ? WHERE id = ? AND title = 'Project Baru'", (st.session_state.temp_prompt[:15], st.session_state.current_sid))
                 conn.commit()
+                
+                st.session_state.temp_prompt = None
                 st.rerun()
