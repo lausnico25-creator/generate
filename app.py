@@ -1,56 +1,50 @@
 import streamlit as st
 import sqlite3
 import google.generativeai as genai
-from openai import OpenAI
-import time
+import requests
+import io
+from PIL import Image
 from datetime import datetime
 
 # --- 1. KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="AI Studio Pro", page_icon="🎨", layout="wide")
+st.set_page_config(page_title="AI Studio Gratis", page_icon="🎨", layout="wide")
 
 # --- 2. DATABASE SETUP ---
 def init_db():
-    conn = sqlite3.connect('studio_data.db', check_same_thread=False)
+    conn = sqlite3.connect('studio_free.db', check_same_thread=False)
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS sessions 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, created_at TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS results 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER, 
-                  type TEXT, prompt TEXT, expanded_prompt TEXT, output_url TEXT, timestamp TEXT)''')
+    c.execute('CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, created_at TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS results (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER, type TEXT, prompt TEXT, output_data BLOB, timestamp TEXT)')
     conn.commit()
     return conn
 
 conn = init_db()
 
-# --- 3. KONEKSI API (MENGGUNAKAN SECRETS) ---
+# --- 3. KONEKSI API ---
 try:
-    # Membaca key dari Streamlit Cloud Secrets
     GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
-    OPENAI_KEY = st.secrets["OPENAI_API_KEY"]
+    HF_TOKEN = st.secrets["HF_TOKEN"]
     
     genai.configure(api_key=GEMINI_KEY)
     gemini_model = genai.GenerativeModel("gemini-2.5-flash")
-    client_openai = OpenAI(api_key=OPENAI_KEY)
 except Exception as e:
-    st.error("⚠️ API Key Error: Pastikan GEMINI_API_KEY dan OPENAI_API_KEY sudah diisi di 'Settings > Secrets' di dashboard Streamlit.")
+    st.error("Pastikan GEMINI_API_KEY dan HF_TOKEN sudah diisi di Secrets!")
     st.stop()
 
-# --- 4. FUNGSI OPTIMASI PROMPT ---
-def get_better_prompt(user_text, mode):
-    try:
-        prompt_style = f"Detailed {mode} generation prompt, cinematic, high resolution, professional lighting, 8k."
-        response = gemini_model.generate_content(f"{prompt_style}\n\nUser Input: {user_text}")
-        return response.text
-    except:
-        return user_text
+# --- 4. FUNGSI GENERATE GAMBAR (HUGGING FACE) ---
+API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+
+def query_hf(payload):
+    response = requests.post(API_URL, headers=headers, json=payload)
+    return response.content
 
 # --- 5. SIDEBAR (RIWAYAT) ---
 with st.sidebar:
     st.title("📁 History")
-    if st.button("➕ Chat Baru", use_container_width=True):
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if st.button("➕ Project Baru", use_container_width=True):
         c = conn.cursor()
-        c.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("Percakapan Baru", now))
+        c.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("Project Baru", datetime.now().strftime("%Y-%m-%d %H:%M")))
         conn.commit()
         st.session_state.current_sid = c.lastrowid
         st.rerun()
@@ -59,14 +53,13 @@ with st.sidebar:
     c = conn.cursor()
     c.execute("SELECT id, title FROM sessions ORDER BY id DESC")
     sessions = c.fetchall()
-    
     for s_id, s_title in sessions:
-        col_chat, col_del = st.columns([4, 1])
-        with col_chat:
+        col_s, col_d = st.columns([4, 1])
+        with col_s:
             if st.button(f"📄 {s_title}", key=f"s_{s_id}", use_container_width=True):
                 st.session_state.current_sid = s_id
                 st.rerun()
-        with col_del:
+        with col_d:
             if st.button("🗑️", key=f"del_{s_id}"):
                 c.execute("DELETE FROM sessions WHERE id = ?", (s_id,))
                 c.execute("DELETE FROM results WHERE session_id = ?", (s_id,))
@@ -74,64 +67,49 @@ with st.sidebar:
                 st.session_state.current_sid = None
                 st.rerun()
 
-# --- 6. LOGIKA SESI ---
 if "current_sid" not in st.session_state or st.session_state.current_sid is None:
-    if sessions:
-        st.session_state.current_sid = sessions[0][0]
+    if sessions: st.session_state.current_sid = sessions[0][0]
     else:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
         c = conn.cursor()
-        c.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("Percakapan Baru", now))
+        c.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("Project Baru", datetime.now().strftime("%Y-%m-%d %H:%M")))
         conn.commit()
         st.session_state.current_sid = c.lastrowid
 
-# --- 7. AREA TAMPILAN UTAMA ---
-st.title("🎓 AI Creative Studio")
+# --- 6. TAMPILAN UTAMA ---
+st.title("🎓 AI Studio (Free Version)")
 
-# Tampilkan isi database untuk sesi saat ini
+# Load riwayat dari database (dalam bentuk gambar binary)
 c = conn.cursor()
-c.execute("SELECT type, prompt, expanded_prompt, output_url FROM results WHERE session_id = ?", (st.session_state.current_sid,))
-for r_type, r_p, r_exp, r_url in c.fetchall():
+c.execute("SELECT type, prompt, output_data FROM results WHERE session_id = ?", (st.session_state.current_sid,))
+for r_type, r_p, r_data in c.fetchall():
     with st.container(border=True):
         st.write(f"**Prompt:** {r_p}")
-        if r_type == "image":
-            st.image(r_url, use_container_width=True)
-        else:
-            st.video(r_url)
-        with st.expander("Detail AI Prompt"):
-            st.caption(r_exp)
+        st.image(r_data, use_container_width=True)
 
-# --- 8. BAGIAN INPUT ---
+# --- 7. INPUT AREA ---
 st.write("---")
-if prompt := st.chat_input("Apa yang ingin kamu buat?"):
-    st.session_state.last_prompt = prompt
+if prompt := st.chat_input("Deskripsikan gambar gratisanmu..."):
+    st.session_state.temp_p = prompt
 
-if "last_prompt" in st.session_state and st.session_state.last_prompt:
-    st.info(f"Siap memproses: **{st.session_state.last_prompt}**")
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        if st.button("🖼️ Generate Image", use_container_width=True):
-            with st.spinner("Menggambar..."):
-                better_prompt = get_better_prompt(st.session_state.last_prompt, "Image")
-                try:
-                    res = client_openai.images.generate(
-                        model="dall-e-3",
-                        prompt=better_prompt,
-                        n=1, size="1024x1024"
-                    )
-                    url = res.data[0].url
-                    
-                    c.execute("INSERT INTO results (session_id, type, prompt, expanded_prompt, output_url, timestamp) VALUES (?,?,?,?,?,?)",
-                              (st.session_state.current_sid, "image", st.session_state.last_prompt, better_prompt, url, datetime.now().strftime("%H:%M")))
-                    # Auto-update judul sidebar
-                    c.execute("UPDATE sessions SET title = ? WHERE id = ? AND title = 'Percakapan Baru'", (st.session_state.last_prompt[:15], st.session_state.current_sid))
-                    conn.commit()
-                    st.session_state.last_prompt = None
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
-
-    with c2:
-        if st.button("🎥 Generate Video", use_container_width=True):
-            st.warning("Maaf, API Video Sora belum dibuka oleh OpenAI untuk publik. Tombol ini sudah siap dihubungkan jika API sudah rilis.")
+if "temp_p" in st.session_state and st.session_state.temp_p:
+    st.info(f"Siap proses: **{st.session_state.temp_p}**")
+    if st.button("🖼️ Generate Image (Free)", use_container_width=True):
+        with st.spinner("Sedang memproses di server Hugging Face..."):
+            # Optimasi prompt dengan Gemini agar hasilnya pro
+            try:
+                res_gemini = gemini_model.generate_content(f"Enhance this image prompt for Stable Diffusion, English only, short and powerful: {st.session_state.temp_p}")
+                enhanced_prompt = res_gemini.text
+            except:
+                enhanced_prompt = st.session_state.temp_p
+            
+            # Panggil Hugging Face
+            image_bytes = query_hf({"inputs": enhanced_prompt})
+            
+            # Simpan ke DB
+            c.execute("INSERT INTO results (session_id, type, prompt, output_data, timestamp) VALUES (?,?,?,?,?)",
+                      (st.session_state.current_sid, "image", st.session_state.temp_p, image_bytes, datetime.now().strftime("%H:%M")))
+            c.execute("UPDATE sessions SET title = ? WHERE id = ? AND title = 'Project Baru'", (st.session_state.temp_p[:15], st.session_state.current_sid))
+            conn.commit()
+            
+            st.session_state.temp_p = None
+            st.rerun()
