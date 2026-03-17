@@ -13,7 +13,7 @@ except:
 # --- Fungsi Global untuk Memanggil AI ---
 def call_visora_ai(content_list):
     # Menggunakan 'gemini-3-flash-latest' agar tidak error 404
-    model = genai.GenerativeModel('gemini-3-flash-latest')
+    model = genai.GenerativeModel('gemini-3.0-flash-latest')
     response = model.generate_content(content_list)
     return response.text
 
